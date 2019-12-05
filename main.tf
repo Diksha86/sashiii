@@ -62,7 +62,7 @@ resource "google_compute_firewall" "firewall-external" {
   network = "${google_compute_network.vpc_network.name}"
   allow {
       protocol = "tcp"
-      ports = ["22", "80", "443", "8080", "8000"]
+      ports = ["8080"]
   }
   source_ranges = ["0.0.0.0/0"]
 }
