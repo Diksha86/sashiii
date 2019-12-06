@@ -3,10 +3,55 @@ provider "google" {
   project     = "${var.gcp_project}"
   region      = "${var.region}"
 }
+resource "google_project_iam_binding" "project" {
+  project = "${var.gcp_project}"
+  role    = "roles/compute.osLogin"
+
+  members = [
+    "user:shriyut.jha@cognizant.com",
+  ]
+}
+resource "google_project_iam_binding" "project1" {
+  project = "${var.gcp_project}"
+  role    = "roles/iam.serviceAccountUser"
+
+  members = [
+    "user:shriyut.jha@cognizant.com",
+  ]
+}
+resource "google_compute_instance_group" "staging_group" {
+  name      = "staging-instance-group"
+  zone      = "${var.zone}"
+  instances = ["${google_compute_instance.instance1.self_link}"]
+  network     = "${google_compute_network.vpc_network.self_link}"
+  named_port {
+    name = "http"
+    port = "8080"
+  }
+
+  named_port {
+    name = "https"
+    port = "8443"
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
 resource "google_compute_network" "vpc_network" {
   name                    = "terraform-network"
-  auto_create_subnetworks = "true"
+  auto_create_subnetworks = "false"
 }
+
+resource "google_compute_subnetwork" "public" {
+ name          = "public"
+ ip_cidr_range = "${var.vpc_public}"
+ network       = "terraform-network"
+ depends_on    = ["google_compute_network.vpc_network"]
+ region        = "${var.region}"
+}
+
 resource "google_compute_instance" "instance1" {
   name         = "${var.instance_name}"
   machine_type = "n1-standard-1"
@@ -20,11 +65,14 @@ tags = ["http-server", "https-server"]
   }
 
   network_interface {
-    network       = "${google_compute_network.vpc_network.self_link}"
+    subnetwork = "${google_compute_subnetwork.public.name}"
     access_config {
     }
   }
- metadata_startup_script = "sudo apt-get update -y; sudo apt-get install nginx -y; sudo -i; cd /etc/nginx/sites-enabled; sed -i 's/80/8080/g' default ; service nginx restart; adduser joe"
+  metadata = {
+   enable-oslogin = "TRUE"
+  }
+ metadata_startup_script = "sudo apt-get update -y; sudo apt-get install nginx -y; sudo -i; cd /etc/nginx/sites-enabled; sed -i 's/80/8080/g' default ; service nginx restart"
 }
 resource "google_compute_address" "instance1" {
     name = "instance1-address"
@@ -49,20 +97,13 @@ resource "google_compute_http_health_check" "instance1" {
   unhealthy_threshold = 10
   timeout_sec = 1
 }
-resource "google_compute_firewall" "firewall-internal" {
-  name    = "instance1-firewall-internal"
-  network = "${google_compute_network.vpc_network.name}"
-  allow {
-    protocol = "all"
-  }
-  source_ranges = ["10.0.0.0/20"]
-}
 resource "google_compute_firewall" "firewall-external" {
   name    = "instance1-firewall-external"
   network = "${google_compute_network.vpc_network.name}"
   allow {
       protocol = "tcp"
-      ports = ["8080"]
+      ports = ["8080","22"]
   }
+  direction = "INGRESS"
   source_ranges = ["0.0.0.0/0"]
 }
